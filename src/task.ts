@@ -1,96 +1,80 @@
-import { getCategories } from "./mockedApi";
+import { Category } from './mockedApi';
 
-export interface CategoryListElement {
+export interface MappedCategory {
   name: string;
   id: number;
   image: string;
   order: number;
-  children: CategoryListElement[];
+  children: MappedCategory[];
   showOnHome: boolean;
 }
 
-export const categoryTree = async (): Promise<CategoryListElement[]> => {
+const SHOW_ON_HOME_CATEGORIES_THRESHOLD = 5;
+const MAX_TOP_LEVEL_DISPLAY_COUNT = 3;
+const SHOW_ON_HOME_TITLE_INDICATOR = '#';
 
-  const res = await getCategories();
+/**
+ * Gets the order value from a Category entry.
+ * If the title is not a number, it returns the entry id.
+ * @param {Category} entry - The category entry.
+ * @returns {number} - The order number.
+ */
+export const getOrderFromEntry = (entry: Category): number => {
+  const order = parseInt(entry.Title, 10);
 
-  if (!res.data) {
+  return isNaN(order) ? entry.id : order;
+};
+
+/**
+ * Sorts an array of MappedCategory by the order property.
+ * @param {MappedCategory[]} categories - The array of categories to sort.
+ * @returns {MappedCategory[]} - The sorted array of categories.
+ */
+export const sortCategories = (
+  categories: MappedCategory[]
+): MappedCategory[] => {
+  return categories.sort((a, b) => {
+    if (!a.order) return -1;
+    if (!b.order) return 1;
+
+    return a.order - b.order;
+  });
+};
+
+/**
+ * Converts an array of Category objects to a tree of MappedCategory objects.
+ * @param {Category[] | undefined} data - The array of category data.
+ * @param {boolean} [isTopLevelCategory=true] - Flag to indicate if the current level is top level.
+ * @returns {MappedCategory[]} - The array of mapped categories.
+ */
+export const categoryTree = (
+  data: Category[] | undefined,
+  isTopLevelCategory = true
+): MappedCategory[] => {
+  if (!data) {
     return [];
   }
 
-  const toShowOnHome: number[] = [];
+  const mappedCategories: MappedCategory[] = [];
 
-  let result = res.data.map((c1) => {
-    let order = c1.Title;
-    if (c1.Title && c1.Title.includes("#")) {
-      order = c1.Title.split("#")[0];
-      toShowOnHome.push(c1.id);
-    }
+  for (const [index, entry] of data.entries()) {
+    const isShowOnHome = isTopLevelCategory
+      ? data.length < SHOW_ON_HOME_CATEGORIES_THRESHOLD ||
+        entry.Title.includes(SHOW_ON_HOME_TITLE_INDICATOR) ||
+        index < MAX_TOP_LEVEL_DISPLAY_COUNT
+      : false;
 
-    let orderL1 = parseInt(order);
-    if (isNaN(orderL1)) {
-      orderL1 = c1.id;
-    }
-    let l2Kids = c1.children
-      ? c1.children.map((c2) => {
-          let order2 = c1.Title;
-          if (c2.Title && c2.Title.includes("#")) {
-            order2 = c2.Title.split("#")[0];
-          }
-          let orderL2 = parseInt(order2);
-          if (isNaN(orderL2)) {
-            orderL2 = c2.id;
-          }
-          let l3Kids = c2.children
-            ? c2.children.map((c3) => {
-                let order3 = c1.Title;
-                if (c3.Title && c3.Title.includes("#")) {
-                  order3 = c3.Title.split("#")[0];
-                }
-                let orderL3 = parseInt(order3);
-                if (isNaN(orderL3)) {
-                  orderL3 = c3.id;
-                }
-                return {
-                  id: c3.id,
-                  image: c3.MetaTagDescription,
-                  name: c3.name,
-                  order: orderL3,
-                  children: [],
-                  showOnHome: false,
-                };
-              })
-            : [];
-          l3Kids.sort((a, b) => a.order - b.order);
-          return {
-            id: c2.id,
-            image: c2.MetaTagDescription,
-            name: c2.name,
-            order: orderL2,
-            children: l3Kids,
-            showOnHome: false,
-          };
-        })
-      : [];
-    l2Kids.sort((a, b) => a.order - b.order);
-    return {
-      id: c1.id,
-      image: c1.MetaTagDescription,
-      name: c1.name,
-      order: orderL1,
-      children: l2Kids,
-      showOnHome: false,
+    const mappedCategory: MappedCategory = {
+      children: entry.hasChildren ? categoryTree(entry.children, false) : [],
+      image: entry.MetaTagDescription,
+      showOnHome: isShowOnHome,
+      id: entry.id,
+      name: entry.name,
+      order: getOrderFromEntry(entry),
     };
-  });
 
-  result.sort((a, b) => a.order - b.order);
-
-  if (result.length <= 5) {
-    result.forEach((a) => (a.showOnHome = true));
-  } else if (toShowOnHome.length > 0) {
-    result.forEach((x) => (x.showOnHome = toShowOnHome.includes(x.id)));
-  } else {
-    result.forEach((x, index) => (x.showOnHome = index < 3));
+    mappedCategories.push(mappedCategory);
   }
 
-  return result;
+  return sortCategories(mappedCategories);
 };
